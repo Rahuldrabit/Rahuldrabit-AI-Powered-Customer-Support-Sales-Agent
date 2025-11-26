@@ -71,7 +71,7 @@ The AI-Powered Customer Support & Sales Agent is a comprehensive solution for au
          ▼                    ▼                    ▼
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
 │  PostgreSQL  │    │    Redis     │    │     LLM      │
-│   Database   │    │ Cache/Queue  │    │  (Optional)  │
+│   Database   │    │ Cache/Queue  │    │   │
 └──────────────┘    └──────────────┘    └──────────────┘
 ```
 
@@ -295,61 +295,126 @@ Load Balancer (Nginx)
 5. **Knowledge Base Integration**: RAG for accurate product information
 6. **Voice/Video Support**: Extend to voice and video calls
 
-## Project Layout
+## Additional Diagrams & Visualizations
 
-The repository follows a clear, modular layout. Key folders and files:
+### Incoming Webhook Sequence
+```mermaid
+sequenceDiagram
+  participant Platform as TikTok/LinkedIn
+  participant API as FastAPI Webhook
+  participant Proc as Message Processor
+  participant Agent as LangGraph Agent
+  participant DB as PostgreSQL
+  participant Analytics as Analytics Service
 
-```
-project/
-├── app/
-│   ├── __init__.py
-│   ├── main.py               # FastAPI application entrypoint
-│   ├── config.py             # Configuration management
-│   ├── agent/
-│   │   ├── __init__.py
-│   │   ├── graph.py          # LangGraph workflow definition
-│   │   ├── nodes.py          # Agent node implementations
-│   │   ├── prompts.py        # System / prompt templates
-│   │   └── tools.py          # Agent helper utilities
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── routes/
-│   │   │   ├── webhooks.py
-│   │   │   ├── messages.py
-│   │   │   ├── analytics.py
-│   │   │   └── admin.py
-│   │   └── dependencies.py
-│   ├── integrations/
-│   │   ├── __init__.py
-│   │   ├── tiktok.py
-│   │   └── linkedin.py
-│   ├── models/
-│   │   ├── __init__.py
-│   │   ├── database.py       # SQLAlchemy models
-│   │   └── schemas.py        # Pydantic schemas
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── conversation.py
-│   │   ├── message_processor.py
-│   │   └── analytics.py
-│   └── utils/
-│       ├── __init__.py
-│       ├── logger.py
-│       └── exceptions.py
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── conftest.py
-├── alembic/                   # Database migrations
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-├── .env.example
-└── README.md
+  Platform->>API: POST /webhooks/{platform}
+  API->>Proc: Normalize & validate payload
+  Proc->>DB: Upsert User / Conversation
+  Proc->>DB: Store inbound Message
+  Proc->>Agent: Invoke workflow (state)
+  Agent->>DB: Read conversation history
+  Agent->>Agent: Classify / Generate / Validate
+  Agent->>DB: Persist AI response Message
+  Proc->>Analytics: Update metrics
+  Proc-->>Platform: Respond (optional delivery)
 ```
 
-This layout aligns with the rest of the architecture document: API endpoints, LangGraph workflow, database schema, and deployment notes remain unchanged and continue to reference these files as the implementation locations.
+### Escalation Decision Flow
+```mermaid
+flowchart TD
+  A[Incoming / Generated Message] --> B{Urgent Keywords?}
+  B -->|Yes| E[Escalate]
+  B -->|No| C{Negative Sentiment?}
+  C -->|Yes| E
+  C -->|No| D[Normal Processing]
+  E --> F[Mark Conversation Escalated]
+  D --> G[Return AI Response]
+  F --> G
+```
 
----
+### Agent Training (Conceptual) Sequence
+```mermaid
+sequenceDiagram
+  participant Admin as Admin User
+  participant API as /admin/agent/train
+  participant Trainer as Training Service
+  participant DB as PostgreSQL
+  Admin->>API: POST /admin/agent/train
+  API->>Trainer: Trigger training job (Celery)
+  Trainer->>DB: Fetch historical messages
+  Trainer->>Trainer: Aggregate & refine prompts
+  Trainer->>DB: Store updated AgentConfig
+  Trainer-->>API: Status update
+  API-->>Admin: Training started
+```
 
-*Last Updated: 2025-11-23*
+### LangGraph Workflow (Mermaid)
+```mermaid
+flowchart LR
+  S[Start] --> C{Classify Intent}
+  C -->|support| R[Retrieve Context]
+  C -->|sales| R
+  C -->|general| R
+  C -->|urgent| X[Flag Escalation]
+  R --> E{Escalation Check}
+  E -->|Escalate| X
+  E -->|Continue| G[Generate Response]
+  G --> V[Validate]
+  V -->|Fail| G
+  V -->|Pass| P[Persist]
+  X --> P
+  P --> END[Return]
+```
+
+### Database Schema (Mermaid ER)
+```mermaid
+erDiagram
+  USER ||--o{ CONVERSATION : has
+  CONVERSATION ||--o{ MESSAGE : contains
+  AGENTCONFIG ||--o{ MESSAGE : influences
+  USER {
+    int id PK
+    string platform
+    string platform_user_id
+  }
+  CONVERSATION {
+    int id PK
+    int user_id FK
+    string status
+    bool escalated
+  }
+  MESSAGE {
+    int id PK
+    int conversation_id FK
+    string sender_type
+    string intent
+    float sentiment_score
+  }
+  AGENTCONFIG {
+    int id PK
+    string config_key
+    text config_value
+  }
+```
+
+### High-Level Data Flow (Mermaid)
+```mermaid
+flowchart LR
+  In[Webhook Event] --> Norm[Normalize]
+  Norm --> Persist[Persist Message]
+  Persist --> AgentStart[Agent Workflow]
+  AgentStart --> Hist[Fetch History]
+  Hist --> Classify[Classify Intent]
+  Classify --> Context[Format Context]
+  Context --> Decide{Escalation?}
+  Decide -->|Yes| Escalate[Flag + Record]
+  Decide -->|No| Respond[Generate Response]
+  Respond --> Validate[Validate]
+  Validate -->|Retry| Respond
+  Validate -->|OK| Store[Store Response]
+  Escalate --> Store
+  Store --> Metrics[Update Analytics]
+  Metrics --> Out[Return API Response]
+```
+
+

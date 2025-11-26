@@ -57,9 +57,10 @@ async def send_message(
         
         if success:
             # Save message to database
+            from app.models.database import MessageSender as _MsgSender
             message = Message(
                 conversation_id=conversation.id,
-                sender_type="agent",
+                sender_type=_MsgSender.AGENT,
                 content=request.message
             )
             db.add(message)

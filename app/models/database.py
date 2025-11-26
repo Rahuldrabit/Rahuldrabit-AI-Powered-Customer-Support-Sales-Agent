@@ -57,7 +57,7 @@ class User(Base):
     username = Column(String, nullable=True)
     display_name = Column(String, nullable=True)
     profile_url = Column(String, nullable=True)
-    metadata = Column(Text, nullable=True)  # JSON stored as text
+    extra_data = Column(Text, nullable=True)  # JSON stored as text
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -96,7 +96,7 @@ class Message(Base):
     intent = Column(SQLEnum(MessageIntent), nullable=True)
     sentiment_score = Column(Float, nullable=True)  # -1.0 to 1.0
     response_time_ms = Column(Integer, nullable=True)
-    metadata = Column(Text, nullable=True)  # JSON stored as text
+    extra_data = Column(Text, nullable=True)  # JSON stored as text
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -124,7 +124,23 @@ class Analytics(Base):
     metric_value = Column(Float, nullable=False)
     dimension = Column(String, nullable=True)  # e.g., platform, intent
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
-    metadata = Column(Text, nullable=True)  # JSON stored as text
+    extra_data = Column(Text, nullable=True)  # JSON stored as text
+
+
+class Credentials(Base):
+    """OAuth credentials per user/platform."""
+    __tablename__ = "credentials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    platform = Column(SQLEnum(Platform), nullable=False)
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User")
 
 
 def get_db():

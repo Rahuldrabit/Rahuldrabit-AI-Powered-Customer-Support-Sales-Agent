@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from app.config import settings
 from app.models.database import engine, Base
 from app.api.routes import webhooks, messages, analytics, admin
+from app.api.routes import oauth
 from fastapi import APIRouter
 from app.utils.logger import setup_logging
 
@@ -52,6 +53,7 @@ app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(messages.router, prefix="/messages", tags=["Messages"])
 app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(oauth.router, prefix="/oauth", tags=["OAuth"])
 
 # Alias router for top-level /agent/* endpoints
 agent_router = APIRouter(tags=["Agent"])

@@ -2,6 +2,8 @@
 
 from typing import Optional
 import re
+import json
+import hashlib
 
 
 def detect_language(text: str) -> str:
@@ -32,6 +34,17 @@ def select_prompt_variant(base_key: str, variant: str) -> str:
         base_key='support' and variant='B' -> 'support_B'
     """
     return f"{base_key}_{variant.upper()}"
+
+
+def assign_sticky_ab_variant(platform_user_id: str) -> str:
+    """
+    Deterministic A/B assignment per user based on hash of platform_user_id.
+
+    Returns 'A' or 'B'.
+    """
+    h = hashlib.sha256(platform_user_id.encode('utf-8')).hexdigest()
+    # Use last hex digit parity for split
+    return 'A' if int(h[-1], 16) % 2 == 0 else 'B'
 
 
 def adjust_response_for_sentiment(response: str, sentiment: float) -> str:

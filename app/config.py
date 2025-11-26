@@ -22,7 +22,12 @@ class Settings(BaseSettings):
     # LLM Configuration
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
-    llm_provider: str = "mock"  # Options: openai, anthropic, mock
+    gemini_api_key: Optional[str] = None
+    llm_provider: str = "mock"  # Options: openai, anthropic, gemini, mock
+    
+    # Gemini Configuration
+    gemini_model: str = "gemini-pro"
+    gemini_rate_limit: int = 60  # requests per minute
 
     # Agent Configuration
     agent_max_tokens: int = 500

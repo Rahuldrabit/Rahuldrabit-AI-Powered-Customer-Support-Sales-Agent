@@ -20,6 +20,11 @@ class AgentState(TypedDict):
     classification_reason: str
     language: str              # detected language code
     prompt_variant: str        # A/B variant used
+    sticky_prompt_variant: str # per-user sticky A/B preference (optional)
+    platform: str              # platform id (tiktok/linkedin) optional
+    platform_user_id: str      # platform user id optional
+    planned_tool_calls: List[Dict[str, Any]]
+    tool_results: Dict[str, Any]
 
 
 class CustomerSupportAgent:
@@ -47,6 +52,9 @@ class CustomerSupportAgent:
         workflow.add_node("classify", self.nodes.classify_message)
         workflow.add_node("retrieve_context", self.nodes.retrieve_context)
         workflow.add_node("check_escalation", self.nodes.check_escalation)
+        workflow.add_node("plan_tools", self.nodes.plan_tools)
+        workflow.add_node("run_tools", self.nodes.run_tools)
+        workflow.add_node("resolve_with_tools", self.nodes.resolve_with_tools)
         workflow.add_node("generate_response", self.nodes.generate_response)
         workflow.add_node("validate_response", self.nodes.validate_response)
         
@@ -61,22 +69,48 @@ class CustomerSupportAgent:
         
         # Conditional edge based on escalation
         def should_escalate(state: AgentState) -> str:
-            """Determine next node based on escalation."""
+            """Determine next node based on escalation.
+
+            If escalation is required, generate a response (handoff message) and skip validation.
+            Otherwise, proceed to normal response and validation.
+            """
             if state.get("requires_escalation"):
-                # If escalation is needed, still generate response but skip validation
-                return "generate_response"
-            return "generate_response"
+                return "generate_response_escalated"
+            return "plan_tools"
         
+        # Add a branch node for escalated path which goes directly to END
+        workflow.add_node("generate_response_escalated", self.nodes.generate_response)
         workflow.add_conditional_edges(
             "check_escalation",
             should_escalate,
             {
-                "generate_response": "generate_response"
+                "plan_tools": "plan_tools",
+                "generate_response_escalated": "generate_response_escalated",
             }
         )
         
-        # After generating response, validate it
+        # Decide whether to run tools after planning
+        def has_tools(state: AgentState) -> str:
+            planned = state.get("planned_tool_calls") or []
+            return "run" if len(planned) > 0 else "direct"
+
+        workflow.add_conditional_edges(
+            "plan_tools",
+            has_tools,
+            {
+                "run": "run_tools",
+                "direct": "generate_response",
+            }
+        )
+
+        # After running tools, resolve with tools then validate
+        workflow.add_edge("run_tools", "resolve_with_tools")
+        workflow.add_edge("resolve_with_tools", "validate_response")
+
+        # After generating response (no tools), validate it
         workflow.add_edge("generate_response", "validate_response")
+        # Escalated path ends after generating handoff response
+        workflow.add_edge("generate_response_escalated", END)
         
         # After validation, end
         workflow.add_edge("validate_response", END)
@@ -87,7 +121,10 @@ class CustomerSupportAgent:
     def process_message(
         self,
         message: str,
-        conversation_history: List[Dict[str, Any]] = None
+        conversation_history: List[Dict[str, Any]] = None,
+        sticky_prompt_variant: str | None = None,
+        platform: str | None = None,
+        platform_user_id: str | None = None,
     ) -> Dict[str, Any]:
         """
         Process an incoming message through the agent workflow.
@@ -114,7 +151,12 @@ class CustomerSupportAgent:
             "response_valid": True,
             "classification_reason": "",
             "language": "",          # will be detected in nodes
-            "prompt_variant": ""     # will be set from settings in nodes
+            "prompt_variant": "",     # will be set from settings in nodes or sticky preference
+            "sticky_prompt_variant": sticky_prompt_variant or "",
+            "platform": platform or "",
+            "platform_user_id": platform_user_id or "",
+            "planned_tool_calls": [],
+            "tool_results": {},
         }
         
         # Run workflow
@@ -133,6 +175,8 @@ class CustomerSupportAgent:
                 "requires_escalation": final_state.get("requires_escalation", False),
                 "escalation_reason": final_state.get("escalation_reason", ""),
                 "sentiment_score": final_state.get("sentiment_score", 0.0),
+                "language": final_state.get("language", ""),
+                "prompt_variant": final_state.get("prompt_variant", "A"),
                 "metadata": {
                     "classification_reason": final_state.get("classification_reason", ""),
                     "response_valid": final_state.get("response_valid", True)

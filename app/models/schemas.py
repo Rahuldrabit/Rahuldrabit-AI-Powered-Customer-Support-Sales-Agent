@@ -80,7 +80,7 @@ class ConversationResponse(ConversationBase):
     created_at: datetime
     updated_at: datetime
     closed_at: Optional[datetime] = None
-    messages: List[MessageResponse] = []
+    messages: List[MessageResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -103,6 +103,7 @@ class TikTokWebhook(BaseModel):
     message: str
     conversation_id: str
     timestamp: Optional[int] = None
+    media_url: Optional[str] = None
 
 
 class LinkedInWebhook(BaseModel):
@@ -112,6 +113,7 @@ class LinkedInWebhook(BaseModel):
     message_text: str
     conversation_id: str
     timestamp: Optional[int] = None
+    attachments: Optional[List[str]] = None
 
 
 # Response Schemas

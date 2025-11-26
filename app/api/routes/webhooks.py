@@ -8,6 +8,8 @@ from app.api.dependencies import get_db
 from app.models.schemas import TikTokWebhook, LinkedInWebhook
 from app.models.database import Platform
 from app.services.message_processor import process_incoming_message
+from app.services.tasks import process_incoming_message_task
+from fastapi import Header
 from app.utils.logger import log
 
 router = APIRouter()
@@ -16,7 +18,8 @@ router = APIRouter()
 @router.post("/tiktok")
 async def tiktok_webhook(
     webhook_data: TikTokWebhook,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    x_signature: str | None = Header(default=None)
 ):
     """
     Receive TikTok DM webhook events.
@@ -31,23 +34,25 @@ async def tiktok_webhook(
     log.info(f"Received TikTok webhook: {webhook_data.event_type}")
     
     try:
-        # Process the incoming message
-        result = await process_incoming_message(
-            db=db,
-            platform=Platform.TIKTOK,
+        # Require signature
+        from app.integrations.tiktok import TikTokClient
+        client = TikTokClient()
+        if not x_signature:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing signature header")
+        if not client.verify_webhook_signature(payload=webhook_data.model_dump_json(), signature=x_signature):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
+
+        # Enqueue for async processing via Celery
+        process_incoming_message_task.delay(
+            platform=Platform.TIKTOK.value,
             platform_user_id=webhook_data.user_id,
             platform_conversation_id=webhook_data.conversation_id,
             message_content=webhook_data.message,
-            username=None  # TikTok may provide this in metadata
+            username=None,
+            extra_payload={"media_url": webhook_data.media_url} if webhook_data.media_url else None,
         )
         
-        log.info(f"TikTok message processed: {result.get('message_id')}")
-        
-        return {
-            "status": "success",
-            "message_id": result.get("message_id"),
-            "response_sent": result.get("response_sent", False)
-        }
+        return {"status": "accepted"}
         
     except Exception as e:
         log.error(f"Error processing TikTok webhook: {e}")
@@ -60,7 +65,8 @@ async def tiktok_webhook(
 @router.post("/linkedin")
 async def linkedin_webhook(
     webhook_data: LinkedInWebhook,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    x_signature: str | None = Header(default=None)
 ):
     """
     Receive LinkedIn messaging webhook events.
@@ -75,23 +81,26 @@ async def linkedin_webhook(
     log.info(f"Received LinkedIn webhook: {webhook_data.event_type}")
     
     try:
-        # Process the incoming message
-        result = await process_incoming_message(
-            db=db,
-            platform=Platform.LINKEDIN,
+        # Require signature
+        from app.integrations.linkedin import LinkedInClient
+        client = LinkedInClient()
+        if not x_signature:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing signature header")
+        if not client.verify_webhook_signature(payload=webhook_data.model_dump_json(), signature=x_signature):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
+
+        # Enqueue for async processing via Celery
+        extra = {"attachments": webhook_data.attachments} if webhook_data.attachments else None
+        process_incoming_message_task.delay(
+            platform=Platform.LINKEDIN.value,
             platform_user_id=webhook_data.sender_id,
             platform_conversation_id=webhook_data.conversation_id,
             message_content=webhook_data.message_text,
-            username=None  # LinkedIn may provide this in metadata
+            username=None,
+            extra_payload=extra,
         )
         
-        log.info(f"LinkedIn message processed: {result.get('message_id')}")
-        
-        return {
-            "status": "success",
-            "message_id": result.get("message_id"),
-            "response_sent": result.get("response_sent", False)
-        }
+        return {"status": "accepted"}
         
     except Exception as e:
         log.error(f"Error processing LinkedIn webhook: {e}")

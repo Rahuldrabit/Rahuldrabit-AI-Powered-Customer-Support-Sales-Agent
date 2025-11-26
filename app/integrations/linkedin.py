@@ -4,6 +4,9 @@ from typing import Optional
 import asyncio
 from app.config import settings
 from app.utils.logger import log
+from app.utils.ratelimiter import RedisRateLimiter
+import hmac
+import hashlib
 
 
 class LinkedInClient:
@@ -19,11 +22,13 @@ class LinkedInClient:
         self.client_id = settings.linkedin_client_id
         self.client_secret = settings.linkedin_client_secret
         self.rate_limit = settings.linkedin_rate_limit
+        self.limiter = RedisRateLimiter(key_prefix="linkedin", rate_limit=self.rate_limit)
     
     async def send_message(
         self,
         conversation_id: str,
-        message: str
+        message: str,
+        access_token: Optional[str] = None,
     ) -> bool:
         """
         Send a message via LinkedIn Messaging API.
@@ -35,6 +40,11 @@ class LinkedInClient:
         Returns:
             True if successful, False otherwise
         """
+        scope = conversation_id or "global"
+        if not self.limiter.acquire(scope=scope):
+            log.warning("LinkedIn rate limit exceeded; dropping or delaying message")
+            return False
+
         log.info(f"[MOCK] Sending LinkedIn message to {conversation_id}: {message[:50]}...")
         
         # Mock implementation - simulate API call delay
@@ -111,5 +121,10 @@ class LinkedInClient:
         Returns:
             True if valid, False otherwise
         """
-        # In production, implement signature verification
-        return True
+        try:
+            if not self.client_secret or not signature:
+                return False
+            mac = hmac.new(self.client_secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+            return hmac.compare_digest(mac, signature)
+        except Exception:
+            return False

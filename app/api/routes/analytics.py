@@ -202,3 +202,49 @@ async def get_escalation_stats(
         escalation_rate=round(escalation_rate, 2),
         top_reasons=top_reasons
     )
+
+
+@router.get("/ab_tests")
+async def get_ab_test_stats(
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Summarize A/B variant performance based on stored analytics metrics.
+
+    Returns variant-level valid response rate and counts.
+    """
+    log.info("Retrieving A/B test stats")
+
+    if not end_date:
+        end_date = datetime.utcnow()
+    if not start_date:
+        start_date = end_date - timedelta(days=30)
+
+    # Metrics stored with metric_type='ab_test', metric_value=1.0 for valid, 0.0 otherwise, dimension=variant
+    rows = db.query(
+        Analytics.dimension,
+        func.count(Analytics.id).label('total'),
+        func.sum(Analytics.metric_value).label('valid_count')
+    ).filter(
+        Analytics.metric_type == 'ab_test',
+        Analytics.timestamp >= start_date,
+        Analytics.timestamp <= end_date
+    ).group_by(Analytics.dimension).all()
+
+    variants = []
+    for dim, total, valid_count in rows:
+        rate = (valid_count / total * 100.0) if total else 0.0
+        variants.append({
+            "variant": dim or "unknown",
+            "total": int(total or 0),
+            "valid": int(valid_count or 0),
+            "valid_rate": round(rate, 2)
+        })
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "variants": variants
+    }

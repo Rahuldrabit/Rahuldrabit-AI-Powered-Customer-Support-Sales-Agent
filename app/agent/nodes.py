@@ -1,9 +1,23 @@
 """LangGraph agent nodes for message processing."""
 
 from typing import Dict, Any, Optional
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
-from langchain.prompts import ChatPromptTemplate
+try:
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    ChatOpenAI = None
+
+try:
+    from langchain_anthropic import ChatAnthropic
+except ImportError:
+    ChatAnthropic = None
+
+try:
+    from langchain_core.prompts import ChatPromptTemplate
+except ImportError:
+    try:
+        from langchain.prompts import ChatPromptTemplate
+    except ImportError:
+        ChatPromptTemplate = None
 
 from app.config import settings
 from app.agent.prompts import (
@@ -26,7 +40,17 @@ from app.agent.tools import (
     adjust_response_for_sentiment
 )
 from app.utils.logger import log
+from app.agent.lc_tools import get_langchain_tools, execute_tool_call
+from app.agent.runtime_tools import lookup_order_status, fetch_profile
 
+try:
+    from langchain_core.messages import AIMessage, ToolMessage
+except Exception:
+    AIMessage = None
+    ToolMessage = None
+
+
+from app.integrations.gemini import get_gemini_client
 
 class AgentNodes:
     """Agent nodes for LangGraph workflow."""
@@ -34,10 +58,16 @@ class AgentNodes:
     def __init__(self):
         """Initialize the agent nodes with LLM client."""
         self.llm = self._initialize_llm()
+        self.gemini = None
+        if settings.llm_provider == "gemini":
+            self.gemini = get_gemini_client()
     
     def _initialize_llm(self):
         """Initialize LLM based on configuration."""
         if settings.llm_provider == "openai" and settings.openai_api_key:
+            if ChatOpenAI is None:
+                log.error("langchain_openai not installed, falling back to mock")
+                return None
             log.info("Initializing OpenAI LLM")
             return ChatOpenAI(
                 api_key=settings.openai_api_key,
@@ -46,6 +76,9 @@ class AgentNodes:
                 max_tokens=settings.agent_max_tokens
             )
         elif settings.llm_provider == "anthropic" and settings.anthropic_api_key:
+            if ChatAnthropic is None:
+                log.error("langchain_anthropic not installed, falling back to mock")
+                return None
             log.info("Initializing Anthropic LLM")
             return ChatAnthropic(
                 api_key=settings.anthropic_api_key,
@@ -53,11 +86,59 @@ class AgentNodes:
                 temperature=settings.agent_temperature,
                 max_tokens=settings.agent_max_tokens
             )
-        else:
-            log.warning("No LLM provider configured, using mock responses")
+        elif settings.llm_provider == "gemini" and settings.gemini_api_key:
+            log.info("Initializing Gemini LLM")
+            # Gemini is handled via self.gemini client directly
             return None
+        else:
+            if settings.llm_provider != "gemini":
+                log.warning("No LLM provider configured, using mock responses")
+            return None
+
+    async def _invoke_with_tools(self, messages) -> str:
+        """Invoke LLM with optional tool bindings and handle one round of tool calls."""
+        if not self.llm:
+            raise RuntimeError("LLM not initialized")
+
+        tools = []
+        try:
+            tools = get_langchain_tools()
+        except Exception:
+            tools = []
+
+        llm_runner = self.llm
+        if tools:
+            try:
+                llm_runner = self.llm.bind_tools(tools)
+            except Exception as e:
+                log.error(f"Failed to bind tools to LLM: {e}")
+                llm_runner = self.llm
+
+        # First pass
+        resp = await llm_runner.ainvoke(messages)
+        # If tool calls present and we can construct ToolMessage, execute and do a second pass
+        try:
+            tool_calls = getattr(resp, "tool_calls", None)
+            if tool_calls and ToolMessage is not None:
+                tool_msgs = []
+                for call in tool_calls:
+                    name = call.get("name")
+                    args = call.get("args", {})
+                    call_id = call.get("id")
+                    try:
+                        result = execute_tool_call(name, args)
+                        tool_msgs.append(ToolMessage(content=str(result), tool_call_id=call_id))
+                    except Exception as te:
+                        tool_msgs.append(ToolMessage(content=f"ERROR: {te}", tool_call_id=call_id))
+                # Re-invoke with tool results appended
+                final = await llm_runner.ainvoke([*messages, resp, *tool_msgs])
+                return getattr(final, "content", str(final))
+        except Exception as e:
+            log.error(f"Tool call handling failed: {e}")
+
+        return getattr(resp, "content", str(resp))
     
-    def classify_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    async def classify_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Classify incoming message intent.
         
@@ -77,7 +158,29 @@ class AgentNodes:
         else:
             lang = settings.agent_default_language
         state["language"] = lang
-        state["prompt_variant"] = settings.agent_prompt_variant.upper()
+
+        # Prompt variant selection (A/B testing)
+        variant_setting = (settings.agent_prompt_variant or "").strip().lower()
+        sticky_pref = (state.get("sticky_prompt_variant") or "").strip().upper()
+
+        # If explicitly forced by settings to A or B, honor that first
+        if variant_setting in {"a", "b"}:
+            variant = variant_setting.upper()
+        elif sticky_pref in {"A", "B"}:
+            # Otherwise, if a per-user sticky preference exists, use it
+            variant = sticky_pref
+        elif variant_setting == "random":
+            # Uniform random split
+            import random
+            variant = random.choice(["A", "B"])
+        elif variant_setting == "auto":
+            # Choose variant B for non-English languages to test alternative phrasing
+            variant = "B" if lang != "en" else "A"
+        else:
+            # Default: use explicit A/B or fallback to settings value
+            variant = settings.agent_prompt_variant.upper()[:1] if settings.agent_prompt_variant else "A"
+
+        state["prompt_variant"] = variant
 
         context = format_context(state.get("conversation_history", []))
         
@@ -92,12 +195,8 @@ class AgentNodes:
         if self.llm:
             try:
                 prompt = ChatPromptTemplate.from_template(CLASSIFICATION_PROMPT)
-                response = self.llm.invoke(
-                    prompt.format_messages(message=message, context=context)
-                )
-                
-                # Parse response
-                response_text = response.content
+                messages = prompt.format_messages(message=message, context=context)
+                response_text = await self._invoke_with_tools(messages)
                 if "CLASSIFICATION:" in response_text:
                     intent_line = [line for line in response_text.split("\n") if "CLASSIFICATION:" in line][0]
                     intent = intent_line.split(":")[1].strip().lower()
@@ -109,6 +208,21 @@ class AgentNodes:
                     
             except Exception as e:
                 log.error(f"LLM classification failed: {e}")
+                state["intent"] = self._rule_based_classification(message)
+        elif self.gemini:
+            try:
+                prompt_text = CLASSIFICATION_PROMPT.format(message=message, context=context)
+                response_text = await self.gemini.generate_content(prompt_text)
+                
+                if "CLASSIFICATION:" in response_text:
+                    intent_line = [line for line in response_text.split("\n") if "CLASSIFICATION:" in line][0]
+                    intent = intent_line.split(":")[1].strip().lower()
+                    state["intent"] = intent
+                    state["classification_reason"] = response_text
+                else:
+                    state["intent"] = self._rule_based_classification(message)
+            except Exception as e:
+                log.error(f"Gemini classification failed: {e}")
                 state["intent"] = self._rule_based_classification(message)
         else:
             # Rule-based classification
@@ -150,6 +264,96 @@ class AgentNodes:
         state["formatted_context"] = format_context(conversation_history)
         
         return state
+
+    async def plan_tools(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Plan which tools to run based on intent and message.
+
+        Produces a list of planned tool calls with args stored in state["planned_tool_calls"].
+        """
+        log.info("Planning tools")
+        planned = []
+        message = state.get("message", "")
+        intent = state.get("intent", "")
+        platform = state.get("platform", "")
+        platform_user_id = state.get("platform_user_id", "")
+
+        # If support-related, attempt to extract order number and maybe lookup status
+        if intent == "support" or any(k in message.lower() for k in ["order", "tracking"]):
+            planned.append({"name": "extract_order_number", "args": {"text": message}})
+            # We'll decide to call lookup_order_status after running extract (if found)
+        
+        # If we have platform context, plan a profile fetch for personalization
+        if platform and platform_user_id:
+            planned.append({"name": "fetch_profile", "args": {"platform": platform, "user_id": platform_user_id}})
+
+        state["planned_tool_calls"] = planned
+        return state
+
+    async def run_tools(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute planned tools sequentially and store results in state["tool_results"]."""
+        log.info("Running planned tools")
+        results: Dict[str, Any] = {}
+        for call in state.get("planned_tool_calls", []) or []:
+            name = call.get("name")
+            args = call.get("args", {})
+            try:
+                if name == "extract_order_number":
+                    res = execute_tool_call(name, args)
+                    results[name] = res
+                    # If found, also lookup order status
+                    if res:
+                        order_number = res
+                        results["lookup_order_status"] = lookup_order_status(order_number)
+                elif name == "fetch_profile":
+                    platform = args.get("platform")
+                    user_id = args.get("user_id")
+                    res = await fetch_profile(platform, user_id)
+                    results[name] = res
+                else:
+                    # Try registry first (detect_language/sentiment etc.)
+                    res = execute_tool_call(name, args)
+                    results[name] = res
+            except Exception as e:
+                log.error(f"Tool {name} failed: {e}")
+                results[name] = {"error": str(e)}
+
+        state["tool_results"] = results
+        return state
+
+    async def resolve_with_tools(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate response considering tool results before validation."""
+        log.info("Resolving with tool results")
+        # Reuse generate_response path but enrich context with tool results JSON
+        import json as _json
+        tool_json = ""
+        try:
+            tool_json = _json.dumps(state.get("tool_results", {}))
+        except Exception:
+            tool_json = str(state.get("tool_results", {}))
+
+        # Build augmented prompt template by appending tool data
+        intent = state.get("intent", "general")
+        language = state.get("language", settings.agent_default_language)
+        variant = state.get("prompt_variant", settings.agent_prompt_variant.upper())
+        base_prompt_template = self._get_prompt_for_intent(intent, variant)
+        augmented_template = base_prompt_template + "\n\nAdditional data from tools (JSON): {tool_results}\nUse this data if relevant."
+        prompt_template = self._wrap_prompt_with_language_hint(augmented_template, language)
+
+        message = state.get("message", "")
+        context = state.get("formatted_context", "")
+
+        if self.llm:
+            try:
+                prompt = ChatPromptTemplate.from_template(prompt_template)
+                messages = prompt.format_messages(message=message, context=context, tool_results=tool_json)
+                final_text = await self._invoke_with_tools(messages)
+                state["response"] = final_text
+                return state
+            except Exception as e:
+                log.error(f"resolve_with_tools LLM failed: {e}")
+
+        # Fallback to simple generation path without tools
+        return await self.generate_response(state)
     
     def _get_prompt_for_intent(self, intent: str, variant: str) -> str:
         """
@@ -177,7 +381,7 @@ class AgentNodes:
         prefix = f"You MUST answer in language code '{language}'.\n\n"
         return prefix + base_prompt
 
-    def generate_response(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    async def generate_response(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate appropriate response based on intent.
         
@@ -207,15 +411,24 @@ class AgentNodes:
         prompt_template = self._wrap_prompt_with_language_hint(base_prompt_template, language)
         
         # Generate response using LLM if available
+        final_text = ""
+        
         if self.llm:
             try:
                 prompt = ChatPromptTemplate.from_template(prompt_template)
-                response = self.llm.invoke(
-                    prompt.format_messages(message=message, context=context)
-                )
-                final_text = response.content
+                messages = prompt.format_messages(message=message, context=context)
+                final_text = await self._invoke_with_tools(messages)
             except Exception as e:
                 log.error(f"LLM response generation failed: {e}")
+                final_text = MOCK_RESPONSES.get(intent, MOCK_RESPONSES["general"])
+        elif self.gemini:
+            try:
+                # For Gemini, we can use the chat capability or just generate content
+                # Here we use generate_content with the full prompt for consistency
+                full_prompt = prompt_template.format(message=message, context=context)
+                final_text = await self.gemini.generate_content(full_prompt)
+            except Exception as e:
+                log.error(f"Gemini response generation failed: {e}")
                 final_text = MOCK_RESPONSES.get(intent, MOCK_RESPONSES["general"])
         else:
             # Use mock responses

@@ -88,8 +88,9 @@ async def override_message(
     original_content = message.content
     
     # Update message
+    from app.models.database import MessageSender as _MsgSender
     message.content = request.new_content
-    message.sender_type = "human"  # Mark as human-edited
+    message.sender_type = _MsgSender.HUMAN  # Mark as human-edited
     
     db.commit()
     db.refresh(message)

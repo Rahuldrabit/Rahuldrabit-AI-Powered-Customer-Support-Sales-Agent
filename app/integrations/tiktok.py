@@ -4,6 +4,9 @@ from typing import Optional
 import asyncio
 from app.config import settings
 from app.utils.logger import log
+from app.utils.ratelimiter import RedisRateLimiter
+import hmac
+import hashlib
 
 
 class TikTokClient:
@@ -20,12 +23,14 @@ class TikTokClient:
         self.client_secret = settings.tiktok_client_secret
         self.webhook_secret = settings.tiktok_webhook_secret
         self.rate_limit = settings.tiktok_rate_limit
+        self.limiter = RedisRateLimiter(key_prefix="tiktok", rate_limit=self.rate_limit)
     
     async def send_message(
         self,
         conversation_id: str,
         message: str,
-        media_url: Optional[str] = None
+        media_url: Optional[str] = None,
+        access_token: Optional[str] = None,
     ) -> bool:
         """
         Send a message via TikTok API.
@@ -38,6 +43,12 @@ class TikTokClient:
         Returns:
             True if successful, False otherwise
         """
+        # Enforce rate limit (global per platform or per conversation scope)
+        scope = conversation_id or "global"
+        if not self.limiter.acquire(scope=scope):
+            log.warning("TikTok rate limit exceeded; dropping or delaying message")
+            return False
+
         log.info(f"[MOCK] Sending TikTok message to {conversation_id}: {message[:50]}...")
         
         # Mock implementation - simulate API call delay
@@ -90,6 +101,11 @@ class TikTokClient:
         Returns:
             True if valid, False otherwise
         """
-        # In production, implement signature verification
-        # using HMAC-SHA256 with webhook_secret
-        return True
+        # Implement HMAC-SHA256 using shared webhook_secret
+        try:
+            if not self.webhook_secret or not signature:
+                return False
+            mac = hmac.new(self.webhook_secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+            return hmac.compare_digest(mac, signature)
+        except Exception:
+            return False
