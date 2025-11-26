@@ -1,0 +1,380 @@
+{
+  "info": {
+    "name": "AI Customer Support Agent API",
+    "description": "Postman collection for testing the AI-Powered Customer Support & Sales Agent",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health & Status",
+      "item": [
+        {
+          "name": "Root",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": ["{{base_url}}"],
+              "path": [""]
+            }
+          }
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "Agent Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/agent/status",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "agent", "status"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "TikTok Webhook - Support Query",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_type\": \"message\",\n  \"user_id\": \"tiktok_user_12345\",\n  \"message\": \"Hey, I ordered the blue hoodie 3 days ago but haven't received tracking info yet\",\n  \"conversation_id\": \"tiktok_conv_001\",\n  \"timestamp\": 1234567890\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/webhooks/tiktok",
+              "host": ["{{base_url}}"],
+              "path": ["webhooks", "tiktok"]
+            }
+          }
+        },
+        {
+          "name": "TikTok Webhook - Urgent Issue",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_type\": \"message\",\n  \"user_id\": \"tiktok_user_99999\",\n  \"message\": \"This is ridiculous! I've been charged twice and no one is helping me!\",\n  \"conversation_id\": \"tiktok_conv_urgent\",\n  \"timestamp\": 1234567890\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/webhooks/tiktok",
+              "host": ["{{base_url}}"],
+              "path": ["webhooks", "tiktok"]
+            }
+          }
+        },
+        {
+          "name": "LinkedIn Webhook - Sales Inquiry",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_type\": \"message\",\n  \"sender_id\": \"linkedin_user_67890\",\n  \"message_text\": \"I'm interested in your enterprise plan. What's the pricing for 50 users?\",\n  \"conversation_id\": \"linkedin_conv_002\",\n  \"timestamp\": 1234567890\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/webhooks/linkedin",
+              "host": ["{{base_url}}"],
+              "path": ["webhooks", "linkedin"]
+            }
+          }
+        },
+        {
+          "name": "Webhook Verify",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/webhooks/verify?challenge=test_challenge_123",
+              "host": ["{{base_url}}"],
+              "path": ["webhooks", "verify"],
+              "query": [
+                {
+                  "key": "challenge",
+                  "value": "test_challenge_123"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Messages & Conversations",
+      "item": [
+        {
+          "name": "List All Conversations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/messages/conversations",
+              "host": ["{{base_url}}"],
+              "path": ["messages", "conversations"]
+            }
+          }
+        },
+        {
+          "name": "List Conversations - Filtered",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/messages/conversations?platform=tiktok&status=active&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["messages", "conversations"],
+              "query": [
+                {
+                  "key": "platform",
+                  "value": "tiktok"
+                },
+                {
+                  "key": "status",
+                  "value": "active"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Escalated Conversations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/messages/conversations?escalated=true",
+              "host": ["{{base_url}}"],
+              "path": ["messages", "conversations"],
+              "query": [
+                {
+                  "key": "escalated",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Conversation Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/messages/conversations/1",
+              "host": ["{{base_url}}"],
+              "path": ["messages", "conversations", "1"]
+            }
+          }
+        },
+        {
+          "name": "Send Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": 1,\n  \"platform\": \"tiktok\",\n  \"message\": \"Thank you for your patience. Your issue has been resolved!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/messages/send",
+              "host": ["{{base_url}}"],
+              "path": ["messages", "send"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Get Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/analytics/metrics",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "metrics"]
+            }
+          }
+        },
+        {
+          "name": "Get Conversation Insights",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/analytics/conversations",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "conversations"]
+            }
+          }
+        },
+        {
+          "name": "Get Escalation Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/analytics/escalations",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "escalations"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Manually Escalate Conversation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Customer requesting supervisor\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/escalate/1",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "escalate", "1"]
+            }
+          }
+        },
+        {
+          "name": "Override Message",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_content\": \"This is the corrected response from a human agent.\",\n  \"reason\": \"AI response was not accurate\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/override/2",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "override", "2"]
+            }
+          }
+        },
+        {
+          "name": "Get System Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/logs?level=INFO&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "logs"],
+              "query": [
+                {
+                  "key": "level",
+                  "value": "INFO"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Configure Agent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"config_key\": \"welcome_message\",\n  \"config_value\": \"Hello! How can I help you today?\",\n  \"description\": \"Default welcome message\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/agent/configure",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "agent", "configure"]
+            }
+          }
+        },
+        {
+          "name": "Trigger Agent Training",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/agent/train",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "agent", "train"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ]
+}
