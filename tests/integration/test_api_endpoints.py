@@ -87,3 +87,10 @@ def test_get_agent_status(client: TestClient):
     data = response.json()
     assert data["status"] == "healthy"
     assert "total_conversations" in data
+
+
+def test_get_metrics_endpoint(client: TestClient):
+    """Test Prometheus metrics endpoint."""
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert "http_requests_total" in response.text

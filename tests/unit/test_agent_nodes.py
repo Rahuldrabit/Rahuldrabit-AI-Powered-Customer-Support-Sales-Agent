@@ -10,50 +10,57 @@ def agent_nodes():
     return AgentNodes()
 
 
-def test_classify_message_support(agent_nodes):
+@pytest.mark.asyncio
+async def test_classify_message_support(agent_nodes):
     """Test classification of support message."""
     state = {
         "message": "I have an issue with my order #12345",
         "conversation_history": []
     }
     
-    result = agent_nodes.classify_message(state)
+    result = await agent_nodes.classify_message(state)
     assert result["intent"] in ["support", "urgent"]
 
 
-def test_classify_message_sales(agent_nodes):
+@pytest.mark.asyncio
+async def test_classify_message_sales(agent_nodes):
     """Test classification of sales message."""
     state = {
         "message": "What's the pricing for your enterprise plan?",
         "conversation_history": []
     }
     
-    result = agent_nodes.classify_message(state)
+    result = await agent_nodes.classify_message(state)
     assert result["intent"] == "sales"
 
 
-def test_classify_message_urgent(agent_nodes):
+@pytest.mark.asyncio
+async def test_classify_message_urgent(agent_nodes):
     """Test classification of urgent message."""
     state = {
         "message": "This is ridiculous!!! I've been charged twice!",
         "conversation_history": []
     }
     
-    result = agent_nodes.classify_message(state)
+    result = await agent_nodes.classify_message(state)
     assert result["intent"] == "urgent"
     assert result["requires_escalation"] == True
 
 
-def test_generate_response(agent_nodes):
+@pytest.mark.asyncio
+async def test_generate_response(agent_nodes):
     """Test response generation."""
     state = {
         "message": "Hello, I need help",
         "intent": "general",
         "formatted_context": "No previous context.",
-        "requires_escalation": False
+        "requires_escalation": False,
+        "language": "en",
+        "prompt_variant": "A",
+        "sentiment_score": 0.0
     }
     
-    result = agent_nodes.generate_response(state)
+    result = await agent_nodes.generate_response(state)
     assert "response" in result
     assert len(result["response"]) > 0
 
@@ -93,3 +100,4 @@ def test_validate_response(agent_nodes):
     result = agent_nodes.validate_response(state_invalid)
     assert result["response_valid"] == False
     assert result["requires_escalation"] == True
+

@@ -1,7 +1,8 @@
 # Core Framework
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
-pydantic==2.5.3
+# Updated for Python 3.13 wheel availability
+pydantic==2.8.2
 pydantic-settings==2.1.0
 
 # LangChain & LangGraph
@@ -43,3 +44,6 @@ httpx==0.26.0
 # Type Checking
 mypy==1.8.0
 types-requests==2.31.0.20240106
+
+# Monitoring
+prometheus-fastapi-instrumentator==7.0.0

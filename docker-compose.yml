@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,7 +28,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,6 +44,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - TIKTOK_WEBHOOK_SECRET=dev_tiktok_secret
+      - TIKTOK_RATE_LIMIT=2
+      - LINKEDIN_CLIENT_SECRET=dev_linkedin_secret
+      - LINKEDIN_CLIENT_ID=dev_linkedin_client
     ports:
       - "8000:8000"
     depends_on:
@@ -67,6 +71,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - TIKTOK_WEBHOOK_SECRET=dev_tiktok_secret
+      - TIKTOK_RATE_LIMIT=2
+      - LINKEDIN_CLIENT_SECRET=dev_linkedin_secret
+      - LINKEDIN_CLIENT_ID=dev_linkedin_client
     depends_on:
       - postgres
       - redis
@@ -74,6 +82,37 @@ services:
       - ./app:/app/app
       - ./logs:/app/logs
     command: celery -A app.services.celery_worker worker --loglevel=info
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: customer_agent_nginx
+    ports:
+      - "8080:80"
+    depends_on:
+      - app
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus
+    container_name: customer_agent_prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9091:9090"
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana
+    container_name: customer_agent_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
 
 volumes:
   postgres_data:

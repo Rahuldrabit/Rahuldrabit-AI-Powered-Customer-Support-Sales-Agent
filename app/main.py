@@ -39,6 +39,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Instrument with Prometheus
+if settings.enable_metrics:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    Instrumentator().instrument(app).expose(app)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,

@@ -7,7 +7,27 @@ from app.utils.logger import log
 
 
 class AgentState(TypedDict):
-    """State schema for the agent workflow."""
+    """State schema for the agent workflow.
+
+    Attributes:
+        message: The current message being processed.
+        conversation_history: List of past message dictionaries.
+        intent: Classified intent of the user message.
+        formatted_context: String representation of conversation history.
+        response: The generated response text.
+        requires_escalation: Boolean indicating if human intervention is needed.
+        escalation_reason: Reason for escalation if required.
+        sentiment_score: Numerical sentiment score (-1.0 to 1.0).
+        response_valid: Boolean indicating if the response passed validation.
+        classification_reason: Explanation for the intent classification.
+        language: Detected language code (e.g., 'en', 'es').
+        prompt_variant: A/B testing variant used ('A' or 'B').
+        sticky_prompt_variant: User's sticky A/B preference if any.
+        platform: Source platform (e.g., 'tiktok', 'linkedin').
+        platform_user_id: User's ID on the source platform.
+        planned_tool_calls: List of tools planned for execution.
+        tool_results: Dictionary of results from executed tools.
+    """
     message: str
     conversation_history: List[Dict[str, Any]]
     intent: str
@@ -28,7 +48,11 @@ class AgentState(TypedDict):
 
 
 class CustomerSupportAgent:
-    """LangGraph-based customer support agent."""
+    """LangGraph-based customer support agent.
+
+    Manages the workflow for processing customer messages, including
+    classification, tool execution, and response generation.
+    """
     
     def __init__(self):
         """Initialize the agent with workflow graph."""
@@ -37,11 +61,13 @@ class CustomerSupportAgent:
         self.workflow = self.graph.compile()
     
     def _build_graph(self) -> StateGraph:
-        """
-        Build the LangGraph workflow.
-        
+        """Builds the LangGraph workflow.
+
+        Constructs the state graph by adding nodes and defining edges
+        for the agent's execution flow.
+
         Returns:
-            Compiled state graph
+            The compiled StateGraph instance.
         """
         log.info("Building agent workflow graph")
         
@@ -118,7 +144,7 @@ class CustomerSupportAgent:
         log.info("Agent workflow graph built successfully")
         return workflow
     
-    def process_message(
+    async def process_message(
         self,
         message: str,
         conversation_history: List[Dict[str, Any]] = None,
@@ -159,9 +185,9 @@ class CustomerSupportAgent:
             "tool_results": {},
         }
         
-        # Run workflow
+        # Run workflow asynchronously
         try:
-            final_state = self.workflow.invoke(initial_state)
+            final_state = await self.workflow.ainvoke(initial_state)
             
             log.info(
                 f"Message processed successfully. "

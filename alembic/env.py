@@ -1,9 +1,19 @@
 """Alembic environment configuration."""
 
+import os
+import sys
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
+
+# Ensure project root (parent of alembic/) is on sys.path so 'app' package resolves
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+PARENT_DIR = os.path.abspath(os.path.dirname(ROOT_DIR))
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
 from app.config import settings
 from app.models.database import Base
