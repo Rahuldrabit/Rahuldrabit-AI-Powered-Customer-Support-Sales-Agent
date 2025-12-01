@@ -431,7 +431,6 @@ docker-compose -f docker-compose.yml up -d
 
 ## 📝 License
 
-This project is part of a software engineering evaluation task for FlowGenX.ai
 
 ## 🛠️ Development
 
